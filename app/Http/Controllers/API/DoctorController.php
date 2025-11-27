@@ -13,7 +13,7 @@ class DoctorController extends Controller
      */
     public function index()
     {
-        // Return all doctors, just their ID and name
+        // Return doctors with ID and name only
         return Doctor::select('doctors_id', 'name')->get(); 
     }
 }

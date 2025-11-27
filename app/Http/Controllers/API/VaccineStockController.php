@@ -9,10 +9,10 @@ use Illuminate\Support\Facades\Validator;
 
 class VaccineStockController extends Controller
 {
-    // Update or Create stock for a specific day
+    // Update or create stock for a day
     public function store(Request $request)
     {
-        // 1. Validate
+        // 1. Validate input
         $validator = Validator::make($request->all(), [
             'date' => 'required|date',
             'amount' => 'required|integer|min:0',
@@ -22,7 +22,7 @@ class VaccineStockController extends Controller
             return response()->json(['success' => false, 'errors' => $validator->errors()], 422);
         }
 
-        // 2. Save (Update if exists, Create if new)
+        // 2. Save (update existing or create new)
         $stock = VaccineStock::updateOrCreate(
             ['date' => $request->date],
             ['quantity' => $request->amount]
@@ -35,7 +35,7 @@ class VaccineStockController extends Controller
         ]);
     }
 
-    // Get stock list
+    // Return stock list
     public function index()
     {
         $stocks = VaccineStock::orderBy('date', 'asc')->get();

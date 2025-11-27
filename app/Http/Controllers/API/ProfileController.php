@@ -9,7 +9,7 @@ use Illuminate\Support\Facades\Response;
 
 class ProfileController extends Controller
 {
-    // 1. SERVE IMAGE VIA API (Fixes CORS)
+    // Serve image via API (avoid CORS)
     public function getAvatar($filename)
     {
         $path = 'avatars/' . $filename;
@@ -20,11 +20,10 @@ class ProfileController extends Controller
 
         $file = Storage::disk('public')->path($path);
 
-        // Fixed: Using multiple approaches to determine MIME type without calling undefined methods
+        // Determine MIME type with fallbacks
         $type = $this->getMimeType($file);
 
-        // response()->file() automatically adds the correct CORS headers
-        // if your Laravel CORS config is set up (which it is by default for API routes)
+        // response()->file() adds appropriate headers when CORS is configured
         return Response::file($file, [
             'Content-Type' => $type
         ]);
@@ -35,7 +34,7 @@ class ProfileController extends Controller
      */
     private function getMimeType($file)
     {
-        // Method 1: Use PHP's mime_content_type function (if available)
+        // Method 1: PHP mime_content_type (if available)
         if (function_exists('mime_content_type')) {
             $mimeType = mime_content_type($file);
             if ($mimeType !== false) {
@@ -43,7 +42,7 @@ class ProfileController extends Controller
             }
         }
 
-        // Method 2: Guess from file extension
+        // Method 2: Fallback to extension map
         $extension = pathinfo($file, PATHINFO_EXTENSION);
         $mimeTypes = [
             'jpg' => 'image/jpeg',
@@ -57,7 +56,7 @@ class ProfileController extends Controller
         return $mimeTypes[strtolower($extension)] ?? 'application/octet-stream';
     }
 
-    // 2. UPLOAD AVATAR
+    // Upload avatar
     public function updateAvatar(Request $request)
     {
         $request->validate([
@@ -67,17 +66,17 @@ class ProfileController extends Controller
         $user = $request->user();
 
         if ($request->hasFile('avatar')) {
-            // Delete old image
+            // Delete old avatar if present
             if ($user->profile_photo_path && Storage::disk('public')->exists($user->profile_photo_path)) {
                 Storage::disk('public')->delete($user->profile_photo_path);
             }
 
-            // Store new
+            // Store new avatar
             $path = $request->file('avatar')->store('avatars', 'public');
             $user->profile_photo_path = $path;
             $user->save();
 
-            // Generate API URL instead of direct storage URL
+            // Return API URL for avatar
             $filename = basename($path);
             $url = url("/api/avatars/{$filename}");
 
@@ -91,12 +90,12 @@ class ProfileController extends Controller
         return response()->json(['success' => false, 'message' => 'No file uploaded'], 400);
     }
 
-    // 3. GET USER INFO
+    // Get user info
     public function user(Request $request)
     {
         $user = $request->user();
 
-        // Convert stored path to API URL
+        // Convert stored avatar path to API URL
         if ($user->profile_photo_path) {
             $filename = basename($user->profile_photo_path);
             $user->avatar_url = url("/api/avatars/{$filename}");

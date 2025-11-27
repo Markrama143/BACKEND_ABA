@@ -9,6 +9,6 @@ class VaccineStock extends Model
 {
     use HasFactory;
 
-    // ERROR FIX: You MUST have this line to save data
+    // Allow mass assignment for date and quantity
     protected $fillable = ['date', 'quantity'];
 }

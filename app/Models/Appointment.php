@@ -6,7 +6,7 @@ use Illuminate\Database\Eloquent\Model;
 
 class Appointment extends Model
 {
-    // The primary key is 'id' as per the migration ($table->id())
+    // Primary key is 'id'
     protected $fillable = [
         'patient_id',
         'date',
@@ -19,7 +19,7 @@ class Appointment extends Model
         'animal_type'
     ];
 
-    // Relationship with Patient model
+    // Appointment belongs to a patient
     public function patient()
     {
         return $this->belongsTo(Patient::class, 'patient_id', 'patient_id');

@@ -12,13 +12,13 @@ class RecommendationController extends Controller
 {
     public function getBestDay()
     {
-        // 1. Setup Timezone
+        // Set timezone
         date_default_timezone_set('Asia/Manila');
 
         $now = Carbon::now();
         $startDate = Carbon::today();
 
-        // 2. TIME CONSTRAINT: If past 5:00 PM, skip today and start looking from tomorrow
+        // If after 5 PM, start from tomorrow
         if ($now->hour >= 17) {
             $startDate->addDay();
         }
@@ -31,30 +31,29 @@ class RecommendationController extends Controller
 
         for ($date = $startDate->copy(); $date->lte($endDate); $date->addDay()) {
 
-            // --- NEW: WEEKEND EXCLUSION ---
-            // If the day is Saturday or Sunday, skip it immediately.
+            // Skip weekends
             if ($date->isWeekend()) {
                 continue;
             }
 
             $dateStr = $date->format('Y-m-d');
 
-            // 3. Get Capacity (Stock or Default 15)
+            // Get capacity (stock or default 15)
             $stock = VaccineStock::where('date', $dateStr)->first();
             $capacity = $stock ? $stock->quantity : 15;
 
-            // 4. Get Actual Bookings
+            // Count booked appointments
             $booked = Appointment::where('date', $dateStr)->count();
 
-            // 5. Calculate Free Slots
+            // Compute free slots
             $freeSlots = $capacity - $booked;
 
-            // 6. LOGIC: Find the day with the MOST free slots
+            // Pick day with most free slots
             if ($freeSlots > 0) {
                 if ($freeSlots > $mostFreeSlots) {
                     $mostFreeSlots = $freeSlots;
 
-                    // Calculate Traffic Level
+                    // Calculate traffic level
                     $percentage = ($booked / $capacity) * 100;
                     $traffic = $percentage < 30 ? 'Low' : ($percentage < 70 ? 'Medium' : 'High');
 

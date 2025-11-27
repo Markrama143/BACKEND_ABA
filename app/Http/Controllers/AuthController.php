@@ -1,12 +1,13 @@
 <?php
 
-namespace App\Http\Controllers;
+namespace App\Http\Controllers\API;
 
-use App\Models\User;
+use App\Http\Controllers\Controller;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use App\Models\User;
 use Illuminate\Support\Facades\Hash;
-use Illuminate\Support\Facades\Validator;
+use Illuminate\Validation\ValidationException;
 
 use function Laravel\Prompts\password;
 
@@ -18,84 +19,75 @@ class AuthController extends Controller
      * @param  \Illuminate\Http\Request  $request
      * @return \Illuminate\Http\JsonResponse
      */
+
+    // Register user
     public function register(Request $request)
     {
-        // 1. Validate the incoming request
-        $validator = Validator::make($request->all(), [
-            'name' => 'required|string|max:255',
+        // 1. Validate input
+        // Name is generated if missing; contact_number is accepted
+        $request->validate([
             'email' => 'required|string|email|max:255|unique:users',
-            'sex' => 'required|string|max:10',
-            'age' => 'required|integer',
-            'address' => 'required|string|max:255',
-            'contact_number' => 'required|string|max:15',
-            'password' => 'required|string|min:8|confirmed', // 'confirmed' checks for 'password_confirmation'
-
+            'password' => 'required|string|min:8|confirmed',
+            'contact_number' => 'nullable|string|max:20',
         ]);
 
-        if ($validator->fails()) {
-            return response()->json($validator->errors(), 422); // 422 Unprocessable Entity
-        }
+        // 2. Generate name from email local-part if missing
+        $generatedName = explode('@', $request->email)[0];
 
-        // 2. Create and save the new user
         $user = User::create([
-            'name' => $request->name,
+            'name' => $generatedName,
             'email' => $request->email,
-            'sex' => $request->sex,
-            'age' => $request->age,
-            'address' => $request->address,
-            'contact_number' => $request->contact_number,
-            'password' => Hash::make($request->password),
-            'password_confirmation' => Hash::make($request->password_confirmation)
+            'password' => $request->password, // Laravel automatically hashes this if using modern versions
+            'contact_number' => $request->contact_number, // Saving the contact number
         ]);
 
-        // 3. Create a token for the new user
-        $token = $user->createToken('authToken')->plainTextToken;
+        $token = $user->createToken('auth_token')->plainTextToken;
 
-        // 4. Return the user and token
-        // This response matches what your Flutter AuthService expects
         return response()->json([
+            'message' => 'User registered successfully',
+            // Use 'token' field to match client
+            'token' => $token,
+            'token_type' => 'Bearer',
             'user' => $user,
-            'token' => $token
-        ], 201); // 201 Created
-    }
+        ], 200);
+    } // Returns 200 for client convenience
 
-    /**
-     * Handle user login.
-     *
-     * @param  \Illuminate\Http\Request  $request
-     * @return \Illuminate\Http\JsonResponse
-     */
     public function login(Request $request)
     {
-        // 1. Validate the incoming request
-        $validator = Validator::make($request->all(), [
+        $request->validate([
             'email' => 'required|string|email',
             'password' => 'required|string',
         ]);
 
-        if ($validator->fails()) {
-            return response()->json($validator->errors(), 422);
+        if (!Auth::attempt($request->only('email', 'password'))) {
+            throw ValidationException::withMessages([
+                'email' => ['The provided credentials are incorrect.'],
+            ]);
         }
 
-        // 2. Attempt to authenticate the user
-        $credentials = $request->only('email', 'password');
+        $user = User::where('email', $request->email)->firstOrFail();
 
-        if (!Auth::attempt($credentials)) {
-            // 401 Unauthorized
-            return response()->json(['message' => 'Invalid credentials'], 401);
-        }
+        $token = $user->createToken('auth_token')->plainTextToken;
 
-        // 3. Get the authenticated user
-        $user = User::where('email', $request->email)->first();
-
-        // 4. Create a token for the user
-        $token = $user->createToken('authToken')->plainTextToken;
-
-        // 5. Return the user and token
-        // This response matches what your Flutter AuthService expects
         return response()->json([
+            'message' => 'User logged in successfully',
+            // Use 'token' field
+            'token' => $token,
+            'token_type' => 'Bearer',
             'user' => $user,
-            'token' => $token
-        ], 200); // 200 OK
+        ]);
+    }
+
+    // Logout user
+    public function logout(Request $request)
+    {
+        // Only delete token if user is logged in
+        if ($request->user()) {
+            $request->user()->currentAccessToken()->delete();
+        }
+
+        return response()->json([
+            'message' => 'User logged out successfully',
+        ]);
     }
 }

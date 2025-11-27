@@ -6,36 +6,29 @@ use Illuminate\Support\Facades\Schema;
 
 return new class extends Migration
 {
-    /**
-     * Run the migrations.
-     */
     public function up(): void
     {
         Schema::create('appointments', function (Blueprint $table) {
-            $table->id(); // Standard primary key
+            $table->id();
 
-            // Appointment Details
-            $table->string('name');
-            $table->string('sex');
-            $table->integer('age');
-            $table->string('email')->nullable(); // Made nullable just in case
-            $table->string('phone_number')->nullable();
-            $table->string('animal_type')->nullable();
+            // Connect appointment to user and patient
+            $table->foreignId('user_id')->constrained()->onDelete('cascade');
+            $table->foreignId('patient_id')->constrained('patients')->onDelete('cascade');
+            
+            // Store appointment details
+            $table->date('appointment_date'); 
+            $table->time('appointment_time');
 
-            // --- ADDED: Date and Time (Required for your App) ---
-            $table->string('date')->nullable();
-            $table->string('time')->nullable();
+            // Track appointment progress: pending → approved → completed or cancelled
+            $table->enum('status', ['pending', 'approved', 'completed', 'cancelled'])->default('pending');
 
-            // --- THE FIX: Create the column BEFORE the foreign key ---
-            // We make it nullable so you can create an appointment even if patient_id is missing temporarily
-            $table->unsignedBigInteger('patient_id')->nullable();
+            // Reason for the visit (e.g., Vaccine, Checkup, Surgery)
+            $table->string('purpose'); 
 
             $table->timestamps();
-
-            // --- FOREIGN KEY CONSTRAINT ---
-            // IMPORTANT: This assumes your 'patients' table has a column named 'patient_id'.
-            // If your patients table uses the standard '$table->id()', change 'patient_id' below to 'id'.
-            $table->foreign('patient_id')->references('patient_id')->on('patients')->onDelete('cascade');
+            
+            // Make searching by date and status faster
+            $table->index(['appointment_date', 'status']);
         });
     }
 

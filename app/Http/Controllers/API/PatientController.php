@@ -13,7 +13,7 @@ class PatientController extends Controller
      */
     public function index()
     {
-        // Return all patients, just their ID and name
+        // Return patients with ID and name only
         return Patient::select('patient_id', 'name')->get();
     }
 }
