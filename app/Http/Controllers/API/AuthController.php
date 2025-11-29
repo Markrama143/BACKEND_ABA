@@ -8,49 +8,39 @@ use Illuminate\Support\Facades\Auth;
 use App\Models\User;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Validation\ValidationException;
-
-use function Laravel\Prompts\password;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 
 class AuthController extends Controller
 {
-    /**
-     * Handle user registration.
-     *
-     * @param  \Illuminate\Http\Request  $request
-     * @return \Illuminate\Http\JsonResponse
-     */
-
     // Register user
     public function register(Request $request)
     {
-        // 1. Validate input
-        // Name is generated if missing; contact_number is accepted
         $request->validate([
             'email' => 'required|string|email|max:255|unique:users',
             'password' => 'required|string|min:8|confirmed',
             'contact_number' => 'nullable|string|max:20',
         ]);
 
-        // 2. Generate name from email local-part if missing
         $generatedName = explode('@', $request->email)[0];
 
         $user = User::create([
             'name' => $generatedName,
             'email' => $request->email,
-            'password' => $request->password, // Laravel automatically hashes this if using modern versions
-            'contact_number' => $request->contact_number, // Saving the contact number
+            // SECURITY FIX: Hash the password before storage
+            'password' => Hash::make($request->password),
+            'contact_number' => $request->contact_number,
         ]);
 
         $token = $user->createToken('auth_token')->plainTextToken;
 
         return response()->json([
             'message' => 'User registered successfully',
-            // Use 'token' field to match client
             'token' => $token,
             'token_type' => 'Bearer',
             'user' => $user,
         ], 200);
-    } // Returns 200 for client convenience
+    }
 
     public function login(Request $request)
     {
@@ -67,11 +57,25 @@ class AuthController extends Controller
 
         $user = User::where('email', $request->email)->firstOrFail();
 
+        // 1. Create Token
         $token = $user->createToken('auth_token')->plainTextToken;
+
+        // 2. SAVE LOGIN HISTORY (Requirement)
+        // We use try-catch so if this fails, the user can still log in
+        try {
+            DB::table('login_histories')->insert([
+                'user_id' => $user->id,
+                'ip_address' => $request->ip(),
+                'user_agent' => $request->userAgent(),
+                'login_at' => now(),
+            ]);
+        } catch (\Exception $e) {
+            // Log error but don't crash the app
+            Log::error("Login History Error: " . $e->getMessage());
+        }
 
         return response()->json([
             'message' => 'User logged in successfully',
-            // Use 'token' field
             'token' => $token,
             'token_type' => 'Bearer',
             'user' => $user,
@@ -81,7 +85,6 @@ class AuthController extends Controller
     // Logout user
     public function logout(Request $request)
     {
-        // Only delete token if user is logged in
         if ($request->user()) {
             $request->user()->currentAccessToken()->delete();
         }

@@ -6,7 +6,7 @@ use App\Http\Controllers\API\AppointmentsController;
 use App\Http\Controllers\API\ProfileController;
 use App\Http\Controllers\API\RecommendationController;
 use App\Http\Controllers\API\VaccineStockController;
-use App\Http\Controllers\AuthController;
+use App\Http\Controllers\API\AuthController;
 
 // Public routes
 Route::post('/register', [AuthController::class, 'register']);
