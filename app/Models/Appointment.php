@@ -2,26 +2,33 @@
 
 namespace App\Models;
 
+use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 
 class Appointment extends Model
 {
-    // Primary key is 'id'
+    use HasFactory;
+
+    // FIX: Updated $fillable to match the new database column names
     protected $fillable = [
-        'patient_id',
-        'date',
-        'time',
+        'user_id',
         'name',
-        'sex',
         'age',
-        'email',
+        'sex',
+        'animal_type',
         'phone_number',
-        'animal_type'
+        'email',
+        'date',     // Renamed from appointment_date
+        'time',     // Renamed from appointment_time
+        'purpose',
+        'status',
     ];
 
-    // Appointment belongs to a patient
-    public function patient()
+    /**
+     * Relationship: An appointment belongs to a user.
+     */
+    public function user()
     {
-        return $this->belongsTo(Patient::class, 'patient_id', 'patient_id');
+        return $this->belongsTo(User::class);
     }
 }

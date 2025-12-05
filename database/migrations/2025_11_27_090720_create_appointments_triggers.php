@@ -10,7 +10,8 @@ return new class extends Migration
      */
     public function up(): void
     {
-        // Trigger 1: Log when new appointment is created
+        // TRIGGER 1: Log when a NEW appointment is created
+        // FIX: Changed NEW.appointment_date to NEW.date and NEW.appointment_time to NEW.time
         DB::unprepared('
             CREATE TRIGGER tr_audit_appointments_insert
             AFTER INSERT ON appointments
@@ -21,20 +22,20 @@ return new class extends Migration
                     NEW.user_id, 
                     "CREATE", 
                     "appointments", 
-                    CONCAT("New appointment booked for ", NEW.appointment_date, " at ", NEW.appointment_time), 
+                    CONCAT("New appointment booked for ", NEW.date, " at ", NEW.time), 
                     NOW(), 
                     NOW()
                 );
             END
         ');
 
-        // Trigger 2: Log when appointment status changes
+        // TRIGGER 2: Log when an appointment STATUS is updated
         DB::unprepared('
             CREATE TRIGGER tr_audit_appointments_update
             AFTER UPDATE ON appointments
             FOR EACH ROW
             BEGIN
-                -- Only log if the status actually changed (e.g., pending -> approved)
+                -- Only log if the status actually changed
                 IF OLD.status != NEW.status THEN
                     INSERT INTO audit_logs (user_id, action, table_name, details, created_at, updated_at)
                     VALUES (
@@ -49,7 +50,8 @@ return new class extends Migration
             END
         ');
 
-        // Trigger 3: Log when appointment is deleted
+        // TRIGGER 3: Log when an appointment is DELETED
+        // FIX: Changed OLD.appointment_date to OLD.date
         DB::unprepared('
             CREATE TRIGGER tr_audit_appointments_delete
             AFTER DELETE ON appointments
@@ -60,7 +62,7 @@ return new class extends Migration
                     OLD.user_id, 
                     "DELETE", 
                     "appointments", 
-                    CONCAT("Appointment deleted. Date was: ", OLD.appointment_date), 
+                    CONCAT("Appointment deleted. Date was: ", OLD.date), 
                     NOW(), 
                     NOW()
                 );
@@ -73,7 +75,6 @@ return new class extends Migration
      */
     public function down(): void
     {
-        // Rollback: drop all triggers
         DB::unprepared('DROP TRIGGER IF EXISTS tr_audit_appointments_insert');
         DB::unprepared('DROP TRIGGER IF EXISTS tr_audit_appointments_update');
         DB::unprepared('DROP TRIGGER IF EXISTS tr_audit_appointments_delete');

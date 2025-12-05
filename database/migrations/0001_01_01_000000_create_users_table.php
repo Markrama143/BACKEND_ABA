@@ -4,7 +4,6 @@ use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
 
-
 return new class extends Migration
 {
     /**
@@ -16,11 +15,13 @@ return new class extends Migration
             $table->id();
             $table->string('name');
             $table->string('email')->unique();
-            // Contact number (optional)
-            $table->string('contact_number')->nullable();
+            
+            // --- ADDED THIS LINE ---
+            $table->string('contact_number')->nullable(); 
+            
             $table->timestamp('email_verified_at')->nullable();
             $table->string('password');
-            $table->string('role')->default('user'); // Or $table->boolean('is_admin')->default(false);
+            $table->string('role')->default('user'); 
             $table->rememberToken();
             $table->timestamps();
         });

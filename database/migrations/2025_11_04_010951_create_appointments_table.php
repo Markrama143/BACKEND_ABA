@@ -11,23 +11,30 @@ return new class extends Migration
         Schema::create('appointments', function (Blueprint $table) {
             $table->id();
 
-            // Connect appointment to user and patient.
-            $table->foreignId('user_id')->constrained()->onDelete('cascade');
-            
-            // Store appointment details.
-            $table->date('appointment_date'); 
-            $table->time('appointment_time');
+            // Connect appointment to user
+            $table->foreignId('user_id')->nullable()->constrained()->onDelete('cascade');
 
-            // Track appointment progress: pending → approved → completed or cancelled.
-            $table->enum('status', ['pending', 'approved', 'completed', 'cancelled'])->default('pending');
+            // Patient & Pet Details
+            $table->string('name');
+            $table->integer('age');
+            $table->string('sex');
+            $table->string('animal_type');
+            $table->string('phone_number')->nullable();
+            $table->string('email')->nullable();
 
-            // Reason for the visit (e.g., Vaccine, Checkup, Surgery).
-            $table->string('purpose'); 
+            // Appointment Details
+            $table->date('date');
+            $table->string('time');
+
+            $table->string('purpose');
+
+            // Status
+            $table->string('status')->default('Pending');
 
             $table->timestamps();
-            
-            // Make searching by date and status faster.
-            $table->index(['appointment_date', 'status']);
+
+            // Indexes
+            $table->index(['date', 'status']);
         });
     }
 

@@ -10,6 +10,7 @@ use Illuminate\Support\Facades\Hash;
 use Illuminate\Validation\ValidationException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Schema;
 
 class AuthController extends Controller
 {
@@ -17,19 +18,20 @@ class AuthController extends Controller
     public function register(Request $request)
     {
         $request->validate([
+            'name' => 'required|string|max:255',
             'email' => 'required|string|email|max:255|unique:users',
             'password' => 'required|string|min:8|confirmed',
             'contact_number' => 'nullable|string|max:20',
+            'role' => 'nullable|string|in:admin,user',
         ]);
 
-        $generatedName = explode('@', $request->email)[0];
-
         $user = User::create([
-            'name' => $generatedName,
+            'name' => $request->name,
             'email' => $request->email,
-            // SECURITY FIX: Hash the password before storage
             'password' => Hash::make($request->password),
             'contact_number' => $request->contact_number,
+            // Fallback to 'user' if role is empty to prevent "Column cannot be null" error
+            'role' => $request->role ?? 'user',
         ]);
 
         $token = $user->createToken('auth_token')->plainTextToken;
@@ -56,23 +58,24 @@ class AuthController extends Controller
         }
 
         $user = User::where('email', $request->email)->firstOrFail();
-
-        // 1. Create Token
         $token = $user->createToken('auth_token')->plainTextToken;
 
-        // 2. SAVE LOGIN HISTORY (Requirement)
-        // We use try-catch so if this fails, the user can still log in
+        // --- TEMPORARY FIX: COMMENT OUT LOGIN HISTORY TO PREVENT CRASH ---
+        /*
         try {
-            DB::table('login_histories')->insert([
-                'user_id' => $user->id,
-                'ip_address' => $request->ip(),
-                'user_agent' => $request->userAgent(),
-                'login_at' => now(),
-            ]);
+            if (Schema::hasTable('login_histories')) { 
+                DB::table('login_histories')->insert([
+                    'user_id' => $user->id,
+                    'ip_address' => $request->ip(),
+                    'user_agent' => $request->userAgent(),
+                    'login_at' => now(),
+                ]);
+            }
         } catch (\Exception $e) {
-            // Log error but don't crash the app
-            Log::error("Login History Error: " . $e->getMessage());
+            Log::error("Login History Error (Skipped): " . $e->getMessage());
         }
+        */
+        // --- END TEMPORARY FIX ---
 
         return response()->json([
             'message' => 'User logged in successfully',
@@ -82,7 +85,6 @@ class AuthController extends Controller
         ]);
     }
 
-    // Logout user
     public function logout(Request $request)
     {
         if ($request->user()) {
