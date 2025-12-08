@@ -73,7 +73,7 @@ class AppointmentSeeder extends Seeder
                 'sex'               => $faker->randomElement(['Male', 'Female']),
                 'age'               => $faker->numberBetween(1, 15),
                 'email'             => $isUserAppointment ? $userEmail : $faker->unique()->safeEmail(),
-                'phone_number'      => $faker->numeric('09#########'),
+                'phone_number'      => $faker->numerify('09#########'),
                 'animal_type'       => $faker->randomElement($animalTypes),
                 'date'              => $dbDate,
                 'time'              => $faker->randomElement($timeSlots),

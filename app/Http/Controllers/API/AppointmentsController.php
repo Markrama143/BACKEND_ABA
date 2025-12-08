@@ -9,26 +9,59 @@ use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Facades\DB;
 use Exception;
 use Carbon\Carbon;
+use Illuminate\Support\Facades\Log;
 
 class AppointmentsController extends Controller
 {
     /**
      * GET /api/appointments
+     * Fetches all appointments for Admin, or only the user's appointments for a regular User.
      */
     public function index(Request $request)
     {
         try {
             $user = $request->user();
-            if (!$user) return response()->json(['data' => []], 200);
 
-            $appointments = Appointment::where('user_id', $user->id)
+            // OPTIMIZATION: Define columns needed for efficient data retrieval
+            $columns = [
+                'id',
+                'name',
+                'sex',
+                'age',
+                'email',
+                'phone_number',
+                'animal_type',
+                'date',
+                'time',
+                'status',
+                'user_id',
+                'created_at'
+            ];
+
+            $query = Appointment::select($columns);
+
+            if ($user) {
+                // FIX: Check for the 'admin' role. If admin, do NOT filter.
+                if (isset($user->role) && $user->role !== 'admin') {
+                    // Standard User: Filter by the user's foreign key reference.
+                    // NOTE: This assumes appointments are linked by 'user_id' (or 'patient_id'). 
+                    // Based on your Seeder, 'user_id' is the safer column to use here.
+                    $query->where('user_id', $user->id);
+                }
+            } else {
+                // Should technically return 401, but we return empty array for safety
+                return response()->json(['data' => []], 200);
+            }
+
+            $appointments = $query
                 ->orderBy('date', 'desc')
                 ->orderBy('time', 'asc')
                 ->get();
 
             return response()->json(['data' => $appointments], 200);
         } catch (Exception $e) {
-            return response()->json(['success' => false, 'error' => $e->getMessage()], 500);
+            Log::error("Appointment Index Error: " . $e->getMessage());
+            return response()->json(['success' => false, 'error' => 'Server Error: Could not fetch appointments.'], 500);
         }
     }
 
@@ -38,7 +71,8 @@ class AppointmentsController extends Controller
     public function availability()
     {
         try {
-            $data = Appointment::select('date', DB::raw('count(*) as total'))
+            $data = DB::table('appointments')
+                ->select('date', DB::raw('count(*) as total'))
                 ->where('status', '!=', 'cancelled')
                 ->groupBy('date')
                 ->get();
@@ -55,6 +89,7 @@ class AppointmentsController extends Controller
      */
     public function store(Request $request)
     {
+        // ... (store logic remains the same) ...
         $validator = Validator::make($request->all(), [
             'name'        => 'required|string',
             'age'         => 'required|integer',
@@ -75,14 +110,13 @@ class AppointmentsController extends Controller
         if ($error) return $error;
 
         // 2. Calculate the Suggested Date (Day 0 + 3 Days)
-        // We do this just for the message, we don't book it yet.
         $suggestedDate = null;
         if ($request->purpose === '1st Dose') {
             $suggestedDate = date('Y-m-d', strtotime($request->date . ' +3 days'));
         }
 
         try {
-            $result = DB::transaction(function () use ($request) {
+            $result = DB::transaction(function () use ($request, &$suggestedDate) {
                 $userId = $request->user() ? $request->user()->id : null;
                 $userEmail = $request->user() ? $request->user()->email : 'N/A';
 
@@ -186,6 +220,7 @@ class AppointmentsController extends Controller
         }
 
         // 2. Check Stock Limit
+        // NOTE: We assume vaccine_stocks has a 'date' column and a 'quantity' column.
         $limit = DB::table('vaccine_stocks')->where('date', $date)->value('quantity');
 
         // If no stock is defined in the DB, assume 0 (No slots)

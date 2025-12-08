@@ -16,14 +16,6 @@ class UserSeeder extends Seeder
     {
         $faker = Faker::create();
 
-        // 1. Create a specific Test User (so you can easily log in)
-        User::create([
-            'name' => 'Test User',
-            'email' => 'test@example.com',
-            'password' => Hash::make('password123'), // Default password
-            'contact_number' => '09123456789',
-        ]);
-
         // 2. Create 9 random users
         foreach (range(1, 9) as $index) {
             User::create([
