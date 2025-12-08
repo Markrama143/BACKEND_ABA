@@ -3,81 +3,74 @@
 namespace App\Http\Controllers\API;
 
 use App\Http\Controllers\Controller;
-use App\Models\Appointment;
-use App\Models\VaccineStock;
-use Carbon\Carbon;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Carbon\Carbon;
+use App\Models\Appointment;
 
 class RecommendationController extends Controller
 {
     public function getBestDay()
     {
-        // Set timezone
-        date_default_timezone_set('Asia/Manila');
+        // Start looking from tomorrow
+        $date = Carbon::tomorrow();
+        $daysChecked = 0;
 
-        $now = Carbon::now();
-        $startDate = Carbon::today();
+        // Fetch all holidays once to minimize DB queries
+        $holidays = DB::table('holidays')->pluck('date')->toArray();
 
-        // If after 5 PM, start from tomorrow
-        if ($now->hour >= 17) {
-            $startDate->addDay();
-        }
+        // Loop through the next 14 days to find the best slot
+        while ($daysChecked < 14) {
+            $dateString = $date->format('Y-m-d');
 
-        // Search the next 10 days (extended slightly to ensure we find a weekday if today is Friday)
-        $endDate = $startDate->copy()->addDays(10);
-
-        $bestOption = null;
-        $mostFreeSlots = -1;
-
-        for ($date = $startDate->copy(); $date->lte($endDate); $date->addDay()) {
-
-            // Skip weekends
+            // 1. Skip Weekends
             if ($date->isWeekend()) {
+                $date->addDay();
+                $daysChecked++;
                 continue;
             }
 
-            $dateStr = $date->format('Y-m-d');
+            // 2. Skip Holidays (The Fix)
+            if (in_array($dateString, $holidays)) {
+                $date->addDay();
+                $daysChecked++;
+                continue;
+            }
 
-            // Get capacity (stock or default 15)
-            $stock = VaccineStock::where('date', $dateStr)->first();
-            $capacity = $stock ? $stock->quantity : 15;
+            // 3. Check Vaccine Stock
+            $stock = DB::table('vaccine_stocks')->where('date', $dateString)->value('quantity');
 
-            // Count booked appointments
-            $booked = Appointment::where('date', $dateStr)->count();
+            // If no stock set, skip (or assume 0)
+            $limit = $stock ?? 0;
 
-            // Compute free slots
-            $freeSlots = $capacity - $booked;
+            if ($limit > 0) {
+                // 4. Check Current Bookings
+                $booked = Appointment::where('date', $dateString)
+                    ->where('status', '!=', 'cancelled')
+                    ->count();
 
-            // Pick day with most free slots
-            if ($freeSlots > 0) {
-                if ($freeSlots > $mostFreeSlots) {
-                    $mostFreeSlots = $freeSlots;
+                // If slots are available, we found our winner!
+                if ($booked < $limit) {
+                    $slotsLeft = $limit - $booked;
 
-                    // Calculate traffic level
-                    $percentage = ($booked / $capacity) * 100;
-                    $traffic = $percentage < 30 ? 'Low' : ($percentage < 70 ? 'Medium' : 'High');
-
-                    $bestOption = [
-                        'date' => $dateStr,
-                        'readable_date' => $date->format('l, M d'),
-                        'traffic_level' => $traffic,
-                        'slots_left' => $freeSlots
-                    ];
+                    return response()->json([
+                        'success' => true,
+                        'data' => [
+                            'date' => $dateString,
+                            'readable_date' => $date->format('l, M d'),
+                            'slots_left' => $slotsLeft,
+                            'traffic_level' => $slotsLeft > 5 ? 'Low' : 'High',
+                        ]
+                    ]);
                 }
             }
+
+            // Move to next day
+            $date->addDay();
+            $daysChecked++;
         }
 
-        if ($bestOption) {
-            return response()->json([
-                'success' => true,
-                'data' => $bestOption,
-                'message' => 'Optimal appointment day found.'
-            ]);
-        }
-
-        return response()->json([
-            'success' => false,
-            'message' => 'No optimal days found in the coming week.'
-        ]);
+        // Fallback if no days found
+        return response()->json(['success' => false, 'message' => 'No slots available soon']);
     }
 }

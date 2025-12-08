@@ -4,6 +4,7 @@ namespace App\Http\Controllers\API;
 
 use App\Http\Controllers\Controller;
 use App\Models\Appointment;
+use App\Models\VaccineStock; // IMPORTANT: Ensure VaccineStock model is accessible
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Facades\DB;
@@ -15,14 +16,12 @@ class AppointmentsController extends Controller
 {
     /**
      * GET /api/appointments
-     * Fetches all appointments for Admin, or only the user's appointments for a regular User.
      */
     public function index(Request $request)
     {
         try {
             $user = $request->user();
 
-            // OPTIMIZATION: Define columns needed for efficient data retrieval
             $columns = [
                 'id',
                 'name',
@@ -36,21 +35,17 @@ class AppointmentsController extends Controller
                 'time',
                 'status',
                 'user_id',
-                'created_at'
+                'created_at',
+                'purpose'
             ];
 
             $query = Appointment::select($columns);
 
             if ($user) {
-                // FIX: Check for the 'admin' role. If admin, do NOT filter.
                 if (isset($user->role) && $user->role !== 'admin') {
-                    // Standard User: Filter by the user's foreign key reference.
-                    // NOTE: This assumes appointments are linked by 'user_id' (or 'patient_id'). 
-                    // Based on your Seeder, 'user_id' is the safer column to use here.
                     $query->where('user_id', $user->id);
                 }
             } else {
-                // Should technically return 401, but we return empty array for safety
                 return response()->json(['data' => []], 200);
             }
 
@@ -86,11 +81,10 @@ class AppointmentsController extends Controller
 
     /**
      * POST /api/appointments
-     * Updated: Books 1st Dose ONLY and suggests date for 2nd Dose.
+     * Implements stock deduction upon booking.
      */
     public function store(Request $request)
     {
-        // ... (store logic remains the same) ...
         $validator = Validator::make($request->all(), [
             'name'        => 'required|string',
             'age'         => 'required|integer',
@@ -106,7 +100,7 @@ class AppointmentsController extends Controller
             return response()->json(['success' => false, 'errors' => $validator->errors()], 422);
         }
 
-        // 1. Check Stock/Holiday for THIS appointment only
+        // 1. Check Stock/Holiday BEFORE starting transaction
         $error = $this->checkStockAvailability($request->date);
         if ($error) return $error;
 
@@ -121,7 +115,21 @@ class AppointmentsController extends Controller
                 $userId = $request->user() ? $request->user()->id : null;
                 $userEmail = $request->user() ? $request->user()->email : 'N/A';
 
-                // Only create the single appointment requested
+                // --- FIX: STOCK DEDUCTION LOGIC ---
+                // Fetch the stock entry for the specific date inside the transaction
+                $stock = VaccineStock::where('date', $request->date)->lockForUpdate()->first(); // lock row
+
+                if (!$stock || $stock->quantity <= 0) {
+                    // Although checked before, this ensures atomic failure if stock changed mid-transaction
+                    throw new Exception("Stock not available for transaction.");
+                }
+
+                // Deduct 1 unit from the quantity
+                $stock->quantity -= 1;
+                $stock->save();
+                // --- END STOCK DEDUCTION ---
+
+                // Create the appointment record
                 return Appointment::create([
                     'user_id'      => $userId,
                     'guardian'     => $request->guardian,
@@ -139,14 +147,16 @@ class AppointmentsController extends Controller
             });
 
             // 3. Create the Success Message
-            $msg = 'Booking Successful!';
+            $msg = 'Booking Successful! One dose deducted from stock.';
             if ($suggestedDate) {
                 $msg .= " Please remember to book your 2nd dose for $suggestedDate.";
             }
 
             return response()->json(['success' => true, 'message' => $msg, 'data' => $result], 201);
         } catch (Exception $e) {
-            return response()->json(['success' => false, 'error' => $e->getMessage()], 500);
+            Log::error("Appointment Store/Stock Deduction Error: " . $e->getMessage());
+            // If any part of the transaction fails (including stock deduction), it rolls back.
+            return response()->json(['success' => false, 'error' => $e->getMessage(), 'message' => 'Booking failed due to server error or stock issue.'], 500);
         }
     }
 
@@ -172,7 +182,6 @@ class AppointmentsController extends Controller
             return response()->json(['success' => false, 'errors' => $validator->errors()], 422);
         }
 
-        // Check stock if date changed
         if ($request->has('date') && $request->date != $appointment->date) {
             $error = $this->checkStockAvailability($request->date);
             if ($error) return $error;
@@ -205,13 +214,81 @@ class AppointmentsController extends Controller
         }
     }
 
+    // --- METHOD TO UPDATE APPOINTMENT STATUS ---
+    public function updateAppointmentStatus(Request $request, $id)
+    {
+        $appointment = Appointment::find($id);
+
+        if (!$appointment) {
+            return response()->json(['success' => false, 'message' => 'Appointment not found'], 404);
+        }
+
+        $validator = Validator::make($request->all(), [
+            'status' => 'required|string|in:Pending,Confirmed,Completed,Cancelled',
+        ]);
+
+        if ($validator->fails()) {
+            Log::warning("Status Update Validation Failed for ID {$id}: " . json_encode($validator->errors()));
+            return response()->json(['success' => false, 'errors' => $validator->errors()], 422);
+        }
+
+        $oldStatus = $appointment->status;
+        $newStatus = $request->status;
+
+        try {
+            // Check if status is changed to Cancelled, and if so, potentially refund stock
+            if ($oldStatus !== 'Cancelled' && $newStatus === 'Cancelled') {
+                // Find the stock entry and increase quantity by 1
+                $stock = VaccineStock::where('date', $appointment->date)->first();
+
+                if ($stock) {
+                    $stock->quantity += 1;
+                    $stock->save();
+                    Log::info("Stock refunded for cancelled appointment {$id}.");
+                }
+            }
+
+            // Check if status is changed FROM Cancelled (means stock must be re-checked/deducted)
+            if ($oldStatus === 'Cancelled' && $newStatus !== 'Cancelled') {
+                // Check if stock is still available (current date stock > current bookings + 1)
+                $error = $this->checkStockAvailability($appointment->date);
+                if ($error) return $error;
+
+                // If stock is available, deduct it again
+                $stock = VaccineStock::where('date', $appointment->date)->lockForUpdate()->first();
+                if ($stock && $stock->quantity > 0) {
+                    $stock->quantity -= 1;
+                    $stock->save();
+                    Log::info("Stock deducted for re-activated appointment {$id}.");
+                } else {
+                    // This should not happen if checkStockAvailability passed, but as a final guard:
+                    return response()->json(['success' => false, 'message' => 'Stock replenishment failed. Cannot move from Cancelled.'], 409);
+                }
+            }
+
+
+            // Final Update
+            $appointment->status = $newStatus;
+            $appointment->save();
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Status updated to ' . $newStatus,
+                'data' => $appointment
+            ], 200);
+        } catch (Exception $e) {
+            Log::error("Status Update Error for ID {$id}: " . $e->getMessage());
+            return response()->json(['success' => false, 'error' => $e->getMessage()], 500);
+        }
+    }
+
+
     /**
      * Helper to check stock AND holidays
      */
     private function checkStockAvailability($date)
     {
         // 1. Check Holiday FIRST
-        // FIXED: Using $date variable directly
         $isHoliday = DB::table('holidays')->where('date', $date)->exists();
         if ($isHoliday) {
             return response()->json([
@@ -221,10 +298,8 @@ class AppointmentsController extends Controller
         }
 
         // 2. Check Stock Limit
-        // NOTE: We assume vaccine_stocks has a 'date' column and a 'quantity' column.
         $limit = DB::table('vaccine_stocks')->where('date', $date)->value('quantity');
 
-        // If no stock is defined in the DB, assume 0 (No slots)
         if ($limit === null || $limit <= 0) {
             return response()->json([
                 'success' => false,
@@ -232,11 +307,12 @@ class AppointmentsController extends Controller
             ], 409);
         }
 
-        // 3. Check how many people already booked
+        // 3. Check how many people already booked (Excluding cancelled appointments)
         $currentBookings = Appointment::where('date', $date)
-            ->where('status', '!=', 'cancelled')
+            ->where('status', '!=', 'Cancelled') // Changed to 'Cancelled' (capitalized) for consistency
             ->count();
 
+        // Check if there is enough stock for one more appointment (Total available slots = $limit)
         if ($currentBookings >= $limit) {
             return response()->json([
                 'success' => false,
