@@ -10,11 +10,13 @@ return new class extends Migration
     {
         Schema::create('appointments', function (Blueprint $table) {
             $table->id();
-
-            // Connect appointment to user
             $table->foreignId('user_id')->nullable()->constrained()->onDelete('cascade');
 
-            // Patient & Pet Details
+            // --- GUARDIAN DETAILS ---
+            $table->string('guardian')->nullable();
+            $table->string('guardian_relationship')->nullable(); // <--- ADD THIS
+
+            // PATIENT DETAILS
             $table->string('name');
             $table->integer('age');
             $table->string('sex');
@@ -22,18 +24,13 @@ return new class extends Migration
             $table->string('phone_number')->nullable();
             $table->string('email')->nullable();
 
-            // Appointment Details
+            // APPOINTMENT DETAILS
             $table->date('date');
             $table->string('time');
-
             $table->string('purpose');
-
-            // Status
             $table->string('status')->default('Pending');
 
             $table->timestamps();
-
-            // Indexes
             $table->index(['date', 'status']);
         });
     }
