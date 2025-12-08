@@ -26,6 +26,7 @@ class AppointmentsController extends Controller
             $columns = [
                 'id',
                 'name',
+                'guardian',
                 'sex',
                 'age',
                 'email',
