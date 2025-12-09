@@ -10,6 +10,11 @@ return new class extends Migration
      */
     public function up(): void
     {
+                    // Drop existing triggers if they exist
+            DB::unprepared('DROP TRIGGER IF EXISTS tr_audit_appointments_insert');
+            DB::unprepared('DROP TRIGGER IF EXISTS tr_audit_appointments_update');
+            DB::unprepared('DROP TRIGGER IF EXISTS tr_audit_appointments_delete');
+
         // TRIGGER 1: Log when a NEW appointment is created
         // FIX: Changed NEW.appointment_date to NEW.date and NEW.appointment_time to NEW.time
         DB::unprepared('
