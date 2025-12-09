@@ -16,35 +16,35 @@ class RecommendationController extends Controller
         $date = Carbon::tomorrow();
         $daysChecked = 0;
 
-        // Fetch all holidays once to minimize DB queries
+        // 1. Fetch all holidays from the DB so we can skip them
         $holidays = DB::table('holidays')->pluck('date')->toArray();
 
         // Loop through the next 14 days to find the best slot
         while ($daysChecked < 14) {
             $dateString = $date->format('Y-m-d');
 
-            // 1. Skip Weekends
+            // 2. Skip Weekends (Saturday & Sunday)
             if ($date->isWeekend()) {
                 $date->addDay();
                 $daysChecked++;
                 continue;
             }
 
-            // 2. Skip Holidays (The Fix)
+            // 3. Skip Holidays (The Fix)
             if (in_array($dateString, $holidays)) {
                 $date->addDay();
                 $daysChecked++;
                 continue;
             }
 
-            // 3. Check Vaccine Stock
+            // 4. Check Vaccine Stock
             $stock = DB::table('vaccine_stocks')->where('date', $dateString)->value('quantity');
 
             // If no stock set, skip (or assume 0)
             $limit = $stock ?? 0;
 
             if ($limit > 0) {
-                // 4. Check Current Bookings
+                // 5. Check Current Bookings
                 $booked = Appointment::where('date', $dateString)
                     ->where('status', '!=', 'cancelled')
                     ->count();

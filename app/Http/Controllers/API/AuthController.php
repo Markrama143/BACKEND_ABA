@@ -10,7 +10,7 @@ use Illuminate\Support\Facades\Hash;
 use Illuminate\Validation\ValidationException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
-use Illuminate\Support\Facades\Schema;
+use Illuminate\Validation\Rules\Password; // <--- ADDED IMPORT
 
 class AuthController extends Controller
 {
@@ -20,9 +20,16 @@ class AuthController extends Controller
         $request->validate([
             'name' => 'required|string|max:255',
             'email' => 'required|string|email|max:255|unique:users',
-            'password' => 'required|string|min:8|confirmed',
             'contact_number' => 'nullable|string|max:20',
-            'role' => 'nullable|string|in:admin,user',
+
+            // --- SECURITY UPDATE: Strong Password Rules ---
+            'password' => [
+                'required',
+                'confirmed', // Checks password_confirmation
+                Password::min(8)
+                    ->numbers() // Require at least one number
+                    ->symbols() // Require at least one special character
+            ],
         ]);
 
         $user = User::create([
@@ -30,8 +37,6 @@ class AuthController extends Controller
             'email' => $request->email,
             'password' => Hash::make($request->password),
             'contact_number' => $request->contact_number,
-            // Fallback to 'user' if role is empty to prevent "Column cannot be null" error
-            'role' => $request->role ?? 'user',
         ]);
 
         $token = $user->createToken('auth_token')->plainTextToken;
@@ -60,22 +65,18 @@ class AuthController extends Controller
         $user = User::where('email', $request->email)->firstOrFail();
         $token = $user->createToken('auth_token')->plainTextToken;
 
-        // --- TEMPORARY FIX: COMMENT OUT LOGIN HISTORY TO PREVENT CRASH ---
-        /*
+        // Save Login History (Wrapped in try-catch to prevent crashes)
         try {
-            if (Schema::hasTable('login_histories')) { 
-                DB::table('login_histories')->insert([
-                    'user_id' => $user->id,
-                    'ip_address' => $request->ip(),
-                    'user_agent' => $request->userAgent(),
-                    'login_at' => now(),
-                ]);
-            }
+            // Check if table exists, or ensure migration for login_histories is run
+            DB::table('login_histories')->insert([
+                'user_id' => $user->id,
+                'ip_address' => $request->ip(),
+                'user_agent' => $request->userAgent(),
+                'login_at' => now(),
+            ]);
         } catch (\Exception $e) {
-            Log::error("Login History Error (Skipped): " . $e->getMessage());
+            Log::error("Login History Error: " . $e->getMessage());
         }
-        */
-        // --- END TEMPORARY FIX ---
 
         return response()->json([
             'message' => 'User logged in successfully',

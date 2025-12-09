@@ -4,11 +4,12 @@ namespace App\Http\Controllers\API;
 
 use App\Http\Controllers\Controller;
 use Illuminate\Http\Request;
-use App\Models\Appointment; // <-- CRITICAL: Required for Appointment model queries
-use App\Models\VaccineStock; // <-- CRITICAL: Required for VaccineStock model queries
-use App\Http\Controllers\API\VaccineStockController; // <-- CRITICAL: Required to call the stock logic
-use Illuminate\Support\Facades\DB; // <-- CRITICAL: Required for DB::table and DB::raw
-use Illuminate\Support\Facades\Log; // Required for Log::error
+use App\Models\Appointment;
+use App\Models\VaccineStock;
+use App\Http\Controllers\API\VaccineStockController;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
+use Carbon\Carbon;
 use Exception;
 
 class AnalyticsController extends Controller
@@ -20,15 +21,13 @@ class AnalyticsController extends Controller
     public function getAdminStats()
     {
         try {
-            // OPTIMIZATION: Use efficient aggregate queries
             $totalAppointments = Appointment::count();
             $pendingRequests = Appointment::where('status', 'Pending')->count();
 
-            // Retrieve LIVE total stock sum from VaccineStockController
+            // Note: VaccineStockController is instantiated here to access stock data
             $stockController = new VaccineStockController();
             $stockResponse = $stockController->index();
 
-            // Decode the JSON response content to get the total_stock value
             $stockData = json_decode($stockResponse->content(), true);
             $totalVaccineStock = $stockData['total_stock'] ?? 0;
 
@@ -55,7 +54,35 @@ class AnalyticsController extends Controller
     }
 
     /**
-     * Get the count of appointments grouped by animal type for charting (DSA).
+     * Fetches raw appointment dates for frontend predictive analysis.
+     * Endpoint: /admin/analytics/raw-appointments
+     */
+    public function getRawAppointments()
+    {
+        try {
+            // FIX: Using the correct column name 'date' as defined in your migration
+            $cutoffDate = Carbon::now()->subYears(3)->startOfDay();
+
+            $rawAppointments = DB::table('appointments')
+                ->select('date')
+                ->where('date', '>=', $cutoffDate)
+                ->get();
+
+            // Return the raw data for client-side aggregation and prediction
+            return response()->json([
+                'success' => true,
+                'message' => 'Raw appointment dates retrieved successfully.',
+                'data' => $rawAppointments
+            ], 200);
+        } catch (Exception $e) {
+            // Log the actual error for debugging the 500
+            Log::error("Raw Appointments Fatal Error: " . $e->getMessage());
+            return response()->json(['success' => false, 'error' => 'Server failed to process the raw appointments query.'], 500);
+        }
+    }
+
+    /**
+     * Get the count of appointments grouped by animal type for charting (Descriptive Analysis).
      * Endpoint: /admin/analytics/animal-counts
      */
     public function getAnimalTypeAnalytics()
@@ -67,6 +94,9 @@ class AnalyticsController extends Controller
                 ->groupBy('animal_type')
                 ->orderBy('total', 'desc')
                 ->get();
+
+            // Log the result to help verify data integrity
+            Log::info("Animal Counts Retrieved: ", $animalCounts->toArray());
 
             return response()->json([
                 'success' => true,
